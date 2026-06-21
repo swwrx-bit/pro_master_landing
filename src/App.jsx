@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+// v2.0import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
