@@ -169,6 +169,7 @@ export default function App() {
     };
   }, []);
 
+
   const handleScrollToTop = () => {
     if (containerRef.current) {
       containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -183,7 +184,7 @@ export default function App() {
     setSubmitting(true);
 
     const { error } = await supabase
-      .from('leads5')
+      .from('salih')
       .insert([{
         name,
         surname,
