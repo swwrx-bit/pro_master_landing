@@ -127,6 +127,34 @@ export default function App() {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [formErrors, setFormErrors] = useState({});
   const [rateLimitMsg, setRateLimitMsg] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const isMobile = window.innerWidth < 768;
+    if (!isMobile) {
+      setIsLoading(false);
+      return;
+    }
+
+    const handleLoad = () => {
+      setIsLoading(false);
+    };
+
+    if (document.readyState === 'complete') {
+      setIsLoading(false);
+    } else {
+      window.addEventListener('load', handleLoad);
+    }
+
+    const timeoutId = setTimeout(() => {
+      setIsLoading(false);
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('load', handleLoad);
+      clearTimeout(timeoutId);
+    };
+  }, []);
 
   const handleCloseModal = () => {
     setShowModal(false);
@@ -299,6 +327,50 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#050505] flex justify-center px-0 overflow-x-hidden">
       
+      {/* LOADING SCREEN FOR MOBILE */}
+      <AnimatePresence>
+        {isLoading && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+            className="fixed inset-0 bg-[#050505] z-[99999] flex flex-col items-center justify-center md:hidden"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ 
+                opacity: [0, 1, 0.7, 1],
+                scale: [0.8, 1, 0.95, 1]
+              }}
+              transition={{ 
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              className="flex flex-col items-center space-y-4"
+            >
+              <img 
+                src={logoImg} 
+                alt="Logo" 
+                className="w-24 h-24 object-contain rounded-full border border-gold/30 shadow-[0_0_30px_rgba(212,175,55,0.2)]" 
+              />
+              <div className="flex flex-col items-center">
+                <span className="font-outfit font-extrabold text-xl tracking-[0.2em] text-gold uppercase">PRO MASTER</span>
+                <span className="text-[10px] tracking-[0.3em] text-gray-400 font-urbanist uppercase mt-1">Almaty</span>
+              </div>
+              <div className="w-20 h-[2px] bg-white/10 rounded-full overflow-hidden mt-4 relative">
+                <motion.div 
+                  initial={{ x: '-100%' }}
+                  animate={{ x: '100%' }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                  className="h-full w-1/2 bg-gold absolute left-0 top-0"
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* BACKGROUND GLOWS - DESKTOP ONLY */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden hidden md:block">
         <div className="absolute top-[10%] left-[20%] w-[500px] h-[500px] rounded-full bg-gold/5 blur-[120px]" />
