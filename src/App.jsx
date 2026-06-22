@@ -105,6 +105,16 @@ const REVIEWS = [
   { name: 'Алина С.', rating: 5, date: '1 месяц назад', text: 'Отличная студия! Очень вежливый менеджер, все подробно объяснил, показал примеры работ. Делали комплекс. Машина выглядит дорого и ухоженно. Спасибо!' }
 ];
 
+// --- Security helpers ---
+const sanitizeInput = (str) => {
+  if (typeof str !== 'string') return '';
+  return str.replace(/<\/?[^>]+(>|$)/g, '').trim();
+};
+const FIELD_MAX_LENGTH = 50;
+const NAME_REGEX = /^[A-Za-zА-Яа-яЁёІіҚқҰұҮүӘәҒғҢңӨөҺһ]+$/;
+const PHONE_REGEX = /^[0-9+]+$/;
+const RATE_LIMIT_MS = 30000;
+
 export default function App() {
   const [showModal, setShowModal] = useState(false);
   const [selectedService, setSelectedService] = useState('polishing');
@@ -115,6 +125,18 @@ export default function App() {
   const [submitted, setSubmitted] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
+  const [rateLimitMsg, setRateLimitMsg] = useState('');
+
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setSubmitted(false);
+    setName('');
+    setSurname('');
+    setPhone('');
+    setFormErrors({});
+    setRateLimitMsg('');
+  };
   
   // Gallery Slider
   const [currentGalleryIndex, setCurrentGalleryIndex] = useState(0);
@@ -179,38 +201,79 @@ export default function App() {
 
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
-    if (!name || !phone) return;
+    setFormErrors({});
+    setRateLimitMsg('');
+
+    // --- Validation ---
+    const errors = {};
+    if (!name.trim()) errors.name = 'Введите имя';
+    else if (!NAME_REGEX.test(name)) errors.name = 'Только буквы';
+    else if (name.length > FIELD_MAX_LENGTH) errors.name = `Максимум ${FIELD_MAX_LENGTH} символов`;
+
+    if (!surname.trim()) errors.surname = 'Введите фамилию';
+    else if (!NAME_REGEX.test(surname)) errors.surname = 'Только буквы';
+    else if (surname.length > FIELD_MAX_LENGTH) errors.surname = `Максимум ${FIELD_MAX_LENGTH} символов`;
+
+    if (!phone.trim()) errors.phone = 'Введите телефон';
+    else if (!PHONE_REGEX.test(phone)) errors.phone = 'Только цифры и +';
+    else if (phone.length > FIELD_MAX_LENGTH) errors.phone = `Максимум ${FIELD_MAX_LENGTH} символов`;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
+    // --- Rate limiting (30 sec) ---
+    const now = Date.now();
+    let lastSubmitTime = null;
+    try {
+      lastSubmitTime = localStorage.getItem('last_booking_submit_time');
+    } catch (err) {
+      // ignore
+    }
+
+    if (lastSubmitTime) {
+      const elapsed = now - parseInt(lastSubmitTime, 10);
+      if (elapsed < RATE_LIMIT_MS) {
+        const wait = Math.ceil((RATE_LIMIT_MS - elapsed) / 1000);
+        setRateLimitMsg(`Подождите ${wait} сек. перед повторной отправкой`);
+        return;
+      }
+    }
 
     setSubmitting(true);
+
+    // --- XSS sanitization ---
+    const cleanName = sanitizeInput(name);
+    const cleanSurname = sanitizeInput(surname);
+    const cleanPhone = sanitizeInput(phone);
+    const cleanService = sanitizeInput(selectedService);
 
     const { error } = await supabase
       .from('salih')
       .insert([{
-        name,
-        surname,
-        phone,
-        service: selectedService,
+        name: cleanName,
+        surname: cleanSurname,
+        phone: cleanPhone,
+        service: cleanService,
         status: 'new',
         date: new Date().toLocaleString('ru-RU')
       }]);
 
-    console.log('Supabase error:', error)
-    console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL)
-
     if (error) {
-      console.error('Ошибка:', error);
       alert('Ошибка при отправке. Попробуйте ещё раз.');
       setSubmitting(false);
       return;
     }
 
+    try {
+      localStorage.setItem('last_booking_submit_time', Date.now().toString());
+    } catch (err) {
+      // ignore
+    }
+
     setSubmitting(false);
     setSubmitted(true);
-
-    // Clear inputs
-    setName('');
-    setSurname('');
-    setPhone('');
   };
 
   const sendToWhatsApp = () => {
@@ -715,7 +778,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[10000] flex items-end justify-center cursor-pointer"
-              onClick={() => { setShowModal(false); setSubmitted(false); }}
+              onClick={handleCloseModal}
             >
               <motion.div 
                 initial={{ y: '100%' }}
@@ -732,7 +795,7 @@ export default function App() {
                     <h3 className="text-lg font-outfit font-extrabold text-white">Заявка на детейлинг</h3>
                   </div>
                   <button 
-                    onClick={() => { setShowModal(false); setSubmitted(false); }}
+                    onClick={handleCloseModal}
                     className="p-2 rounded-full bg-white/5 text-gray-400 hover:text-white transition-all"
                   >
                     <X className="w-5 h-5" />
@@ -742,29 +805,37 @@ export default function App() {
                 {!submitted ? (
                   /* Form */
                   <form onSubmit={handleBookingSubmit} className="space-y-4">
+                    {/* Rate limit message */}
+                    {rateLimitMsg && <p className="text-[10px] text-amber-400 font-semibold">{rateLimitMsg}</p>}
+
                     {/* First Name */}
                     <div className="space-y-1">
                       <label className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold font-manrope">Имя *</label>
                       <input 
                         type="text" 
                         required
+                        maxLength={FIELD_MAX_LENGTH}
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder="Александр"
-                        className="w-full h-[50px] px-4 rounded-input bg-dark-input border border-white/5 text-xs text-white focus:border-gold/50 focus:outline-none transition-all placeholder:text-gray-600 font-manrope"
+                        className={`w-full h-[50px] px-4 rounded-input bg-dark-input border text-xs text-white focus:border-gold/50 focus:outline-none transition-all placeholder:text-gray-600 font-manrope ${formErrors.name ? 'border-red-500/70' : 'border-white/5'}`}
                       />
+                      {formErrors.name && <p className="text-[10px] text-red-400">{formErrors.name}</p>}
                     </div>
 
                     {/* Surname */}
                     <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold font-manrope">Фамилия</label>
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold font-manrope">Фамилия *</label>
                       <input 
                         type="text" 
+                        required
+                        maxLength={FIELD_MAX_LENGTH}
                         value={surname}
                         onChange={(e) => setSurname(e.target.value)}
                         placeholder="Иванов"
-                        className="w-full h-[50px] px-4 rounded-input bg-dark-input border border-white/5 text-xs text-white focus:border-gold/50 focus:outline-none transition-all placeholder:text-gray-600 font-manrope"
+                        className={`w-full h-[50px] px-4 rounded-input bg-dark-input border text-xs text-white focus:border-gold/50 focus:outline-none transition-all placeholder:text-gray-600 font-manrope ${formErrors.surname ? 'border-red-500/70' : 'border-white/5'}`}
                       />
+                      {formErrors.surname && <p className="text-[10px] text-red-400">{formErrors.surname}</p>}
                     </div>
 
                     {/* Phone */}
@@ -773,11 +844,13 @@ export default function App() {
                       <input 
                         type="tel" 
                         required
+                        maxLength={FIELD_MAX_LENGTH}
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         placeholder="+7 (702) 777-68-96"
-                        className="w-full h-[50px] px-4 rounded-input bg-dark-input border border-white/5 text-xs text-white focus:border-gold/50 focus:outline-none transition-all placeholder:text-gray-600 font-manrope"
+                        className={`w-full h-[50px] px-4 rounded-input bg-dark-input border text-xs text-white focus:border-gold/50 focus:outline-none transition-all placeholder:text-gray-600 font-manrope ${formErrors.phone ? 'border-red-500/70' : 'border-white/5'}`}
                       />
+                      {formErrors.phone && <p className="text-[10px] text-red-400">{formErrors.phone}</p>}
                     </div>
 
                     {/* Service Select */}
@@ -838,7 +911,7 @@ export default function App() {
                       </button>
                       
                       <button 
-                        onClick={() => { setShowModal(false); setSubmitted(false); }}
+                        onClick={handleCloseModal}
                         className="w-full h-[50px] rounded-full border border-gold/50 text-gold font-outfit text-xs font-bold tracking-wider uppercase hover:bg-gold/10 active:scale-95 transition-all flex items-center justify-center pt-1"
                       >
                         Вернуться на сайт
